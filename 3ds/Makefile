@@ -31,25 +31,50 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------
+# External tools
+#---------------------------------------------------------------------------------
+ifeq ($(OS),Windows_NT)
+MAKEROM 	?= ../makerom.exe
+BANNERTOOL 	?= ../bannertool.exe
+
+else
+MAKEROM 	?= makerom
+BANNERTOOL 	?= bannertool
+
+endif
+
+#---------------------------------------------------------------------------------
+# Version number
+#---------------------------------------------------------------------------------
+VERSION_MAJOR := 0
+VERSION_MINOR := 1
+VERSION_MICRO := 0
+
+VERSION_STRING := "$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)"
+#---------------------------------------------------------------------------------
 TARGET		:=	Mystery-Dice-Game
 BUILD		:=	build
-UNIVCORE	:=	Universal-Core
-SOURCES		:=	$(SOURCECORES) $(UNIVCORE) source source/core
+UNIVCORE	:= 	Universal-Core
+SOURCES		:=	$(UNIVCORE) source
 DATA		:=	data
-INCLUDES	:=	$(INCLUDECORES) $(UNIVCORE) include include/core
+INCLUDES	:=	$(UNIVCORE) include
 GRAPHICS	:=	assets/gfx
-APP_AUTHOR	:=	SuperSaiyajinStackZ
-APP_DESCRIPTION := The mystery dice game.
-ICON		:=	app/icon.png
 ROMFS		:=	romfs
 GFXBUILD	:=	$(ROMFS)/gfx
+APP_AUTHOR	:=	SuperSaiyajinStackZ
+APP_DESCRIPTION := The Mystery Dice Game.
+ICON		:=	app/icon.png
+BNR_IMAGE	:=  app/banner.png
+RSF_FILE	:=	app/build-cia.rsf
 
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
-CFLAGS	:=	-g -Wall -O2 -mword-relocations \
+CFLAGS	:=	-g -Wall -Wno-psabi -O2 -mword-relocations \
+			-DV_STRING=\"$(VERSION_STRING)\" \
 			-fomit-frame-pointer -ffunction-sections \
 			$(ARCH)
 
@@ -66,7 +91,7 @@ LIBS	:= -lcitro2d -lcitro3d -lctru
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:= $(CTRULIB)
+LIBDIRS	:= $(PORTLIBS) $(CTRULIB)
 
 
 #---------------------------------------------------------------------------------
@@ -166,31 +191,34 @@ endif
 #---------------------------------------------------------------------------------
 all: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS_T3XFILES) $(T3XHFILES)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
-	bannertool makesmdh -i "app/icon.png" -s "$(TARGET)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -o "app/icon.bin"
 
-$(BUILD):
-	@mkdir -p $@
-
-ifneq ($(GFXBUILD),$(BUILD))
-$(GFXBUILD):
-	@mkdir -p $@
-endif
-
-ifneq ($(DEPSDIR),$(BUILD))
-$(DEPSDIR):
-	@mkdir -p $@
-endif
-
-#---------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(GFXBUILD)
+	@rm -fr $(BUILD) $(TARGET).elf
+	@rm -fr $(BUILD) $(TARGET).cia
+	@rm -fr $(BUILD) $(TARGET).3dsx
+	@rm -fr $(BUILD) $(TARGET).smdh
+	@rm -fr $(OUTDIR)
+
+
+#---------------------------------------------------------------------------------
+cia: $(BUILD)
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile cia
+
+#---------------------------------------------------------------------------------
+3dsx: $(BUILD)
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile 3dsx
 
 #---------------------------------------------------------------------------------
 $(GFXBUILD)/%.t3x	$(BUILD)/%.h	:	%.t3s
 #---------------------------------------------------------------------------------
 	@echo $(notdir $<)
-	@tex3ds -i $< -H $(BUILD)/$*.h -d $(DEPSDIR)/$*.d -o $(GFXBUILD)/$*.t3x
+	$(DEVKITPRO)/tools/bin/tex3ds -i $< -H $(BUILD)/$*.h -d $(DEPSDIR)/$*.d -o $(GFXBUILD)/$*.t3x
+
+#---------------------------------------------------------------------------------
+$(BUILD):
+	@[ -d $@ ] || mkdir -p $@
 
 #---------------------------------------------------------------------------------
 else
@@ -198,11 +226,16 @@ else
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
-$(OUTPUT).3dsx	:	$(OUTPUT).elf $(_3DSXDEPS)
-
-$(OFILES_SOURCES) : $(HFILES)
+all: $(OUTPUT).cia $(OUTPUT).elf $(OUTPUT).3dsx
 
 $(OUTPUT).elf	:	$(OFILES)
+
+$(OUTPUT).cia	:	$(OUTPUT).elf $(OUTPUT).smdh
+	$(BANNERTOOL) makebanner -i "../app/banner.png" -a "../app/BannerAudio.wav" -o "../app/banner.bin"
+
+	$(BANNERTOOL) makesmdh -i "../app/icon.png" -s "$(TARGET)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -o "../app/icon.bin"
+
+	$(MAKEROM) -f cia -target t -exefslogo -o "../Mystery-Dice-Game.cia" -elf "../Mystery-Dice-Game.elf" -rsf "../app/build-cia.rsf" -banner "../app/banner.bin" -icon "../app/icon.bin" -logo "../app/logo.bcma.lz" -DAPP_ROMFS="$(TOPDIR)/$(ROMFS)" -major $(VERSION_MAJOR) -minor $(VERSION_MINOR) -micro $(VERSION_MICRO) -DAPP_VERSION_MAJOR="$(VERSION_MAJOR)"
 
 #---------------------------------------------------------------------------------
 # you need a rule like this for each extension you use as binary data
